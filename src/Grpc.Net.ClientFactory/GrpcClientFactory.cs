@@ -27,6 +27,18 @@ namespace Grpc.Net.ClientFactory;
 public abstract class GrpcClientFactory
 {
     /// <summary>
+    /// Create a gRPC client instance for the specified <paramref name="type"/> and configuration name.
+    /// </summary>
+    /// <param name="name">The configuration name.</param>
+    /// <param name="type">The gRPC client type.</param>
+    /// <returns>A gRPC client instance.</returns>
+    public abstract object CreateClient(
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        Type type, string name);
+
+    /// <summary>
     /// Create a gRPC client instance for the specified <typeparamref name="TClient"/> and configuration name.
     /// </summary>
     /// <typeparam name="TClient">The gRPC client type.</typeparam>

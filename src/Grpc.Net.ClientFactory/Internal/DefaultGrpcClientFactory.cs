@@ -17,9 +17,7 @@
 #endregion
 
 using System.Diagnostics.CodeAnalysis;
-using Grpc.Core;
 using Grpc.Core.Interceptors;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Grpc.Net.ClientFactory.Internal;
@@ -39,19 +37,24 @@ internal class DefaultGrpcClientFactory : GrpcClientFactory
         _grpcClientFactoryOptionsMonitor = grpcClientFactoryOptionsMonitor;
     }
 
-    public override TClient CreateClient<
+#if NET5_0_OR_GREATER
+    [UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "DependencyInjection only used with safe types.")]
+#endif
+    public override object CreateClient(
 #if NET5_0_OR_GREATER
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
 #endif
-        TClient>(string name) where TClient : class
+        Type type, string name)
     {
-        var defaultClientActivator = _serviceProvider.GetService<DefaultClientActivator<TClient>>();
+        var activatorType = typeof(DefaultClientActivator<>).MakeGenericType(type);
+        var defaultClientActivator = _serviceProvider.GetService(activatorType) as IClientActivator;
         if (defaultClientActivator == null)
         {
             throw new InvalidOperationException($"No gRPC client configured with name '{name}'.");
         }
 
-        var callInvoker = _callInvokerFactory.CreateInvoker(name, typeof(TClient));
+        var callInvoker = _callInvokerFactory.CreateInvoker(name, type);
 
         var clientFactoryOptions = _grpcClientFactoryOptionsMonitor.Get(name);
 
@@ -76,20 +79,29 @@ internal class DefaultGrpcClientFactory : GrpcClientFactory
         if (clientFactoryOptions.Creator != null)
         {
             var c = clientFactoryOptions.Creator(resolvedCallInvoker);
-            if (c is TClient client)
+            if (type.IsInstanceOfType(c))
             {
-                return client;
+                return c;
             }
             else if (c == null)
             {
                 throw new InvalidOperationException("A null instance was returned by the configured client creator.");
             }
 
-            throw new InvalidOperationException($"The {c.GetType().FullName} instance returned by the configured client creator is not compatible with {typeof(TClient).FullName}.");
+            throw new InvalidOperationException($"The {c.GetType().FullName} instance returned by the configured client creator is not compatible with {type.FullName}.");
         }
         else
         {
             return defaultClientActivator.CreateClient(resolvedCallInvoker);
         }
+    }
+
+    public override TClient CreateClient<
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TClient>(string name)
+    {
+        return (TClient)CreateClient(typeof(TClient), name);
     }
 }

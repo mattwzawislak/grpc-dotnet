@@ -22,12 +22,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Grpc.Net.ClientFactory.Internal;
 
+internal interface IClientActivator
+{
+    object CreateClient(CallInvoker callInvoker);
+}
+
 // Should be registered as a singleton, so it that it can act as a cache for the Activator.
 internal class DefaultClientActivator<
 #if NET5_0_OR_GREATER
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
 #endif
-    TClient> where TClient : class
+    TClient> : IClientActivator where TClient : class
 {
     private static readonly Func<ObjectFactory> _createActivator = static () => ActivatorUtilities.CreateFactory(typeof(TClient), new Type[] { typeof(CallInvoker), });
 
@@ -57,8 +62,8 @@ internal class DefaultClientActivator<
         }
     }
 
-    public TClient CreateClient(CallInvoker callInvoker)
+    public object CreateClient(CallInvoker callInvoker)
     {
-        return (TClient)Activator(_services, new object[] { callInvoker });
+        return Activator(_services, new object[] { callInvoker });
     }
 }

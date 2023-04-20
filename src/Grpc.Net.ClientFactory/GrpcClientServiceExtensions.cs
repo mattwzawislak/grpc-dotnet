@@ -70,6 +70,25 @@ public static class GrpcClientServiceExtensions
         return services.AddGrpcClientCore<TClient>(name);
     }
 
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("Calls System.Type.MakeGenericType(params Type[])")]
+#endif
+    public static IHttpClientBuilder AddGrpcClient(this IServiceCollection services,
+     #if NET5_0_OR_GREATER
+             [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    #endif
+             Type type)
+         {
+             if (services == null)
+             {
+                 throw new ArgumentNullException(nameof(services));
+             }
+
+             var name = TypeNameHelper.GetTypeDisplayName(type, fullName: false);
+
+             return services.AddGrpcClientCore(type, name);
+         }
+
     /// <summary>
     /// Adds the <see cref="IHttpClientFactory"/> and related services to the <see cref="IServiceCollection"/> and configures
     /// a binding between the <typeparamref name="TClient"/> type and a named <see cref="HttpClient"/>. The client name
@@ -326,7 +345,36 @@ public static class GrpcClientServiceExtensions
         // because we access it by reaching into the service collection.
         services.TryAddSingleton(new GrpcClientMappingRegistry());
 
-        IHttpClientBuilder clientBuilder = services.AddGrpcHttpClient<TClient>(name);
+        IHttpClientBuilder clientBuilder = services.AddGrpcHttpClient(typeof(TClient), name);
+
+        return clientBuilder;
+    }
+
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("Calls System.Type.MakeGenericType(params Type[])")]
+#endif
+    private static IHttpClientBuilder AddGrpcClientCore(this IServiceCollection services,
+#if NET5_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        Type type, string name)
+    {
+        if (name == null)
+        {
+            throw new ArgumentNullException(nameof(name));
+        }
+
+        // Transient so that IServiceProvider injected into constructor is for the current scope.
+        services.TryAddTransient<GrpcClientFactory, DefaultGrpcClientFactory>();
+
+        services.TryAddSingleton<GrpcCallInvokerFactory>();
+        services.TryAddSingleton(typeof(DefaultClientActivator<>).MakeGenericType(type));
+
+        // Registry is used to track state and report errors **DURING** service registration. This has to be an instance
+        // because we access it by reaching into the service collection.
+        services.TryAddSingleton(new GrpcClientMappingRegistry());
+
+        IHttpClientBuilder clientBuilder = services.AddGrpcHttpClient(type, name);
 
         return clientBuilder;
     }
@@ -334,12 +382,11 @@ public static class GrpcClientServiceExtensions
     /// <summary>
     /// This is a custom method to register the HttpClient and typed factory. Needed because we need to access the config name when creating the typed client
     /// </summary>
-    private static IHttpClientBuilder AddGrpcHttpClient<
+    private static IHttpClientBuilder AddGrpcHttpClient(this IServiceCollection services,
 #if NET5_0_OR_GREATER
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
 #endif
-        TClient>(this IServiceCollection services, string name)
-        where TClient : class
+        Type type, string name)
     {
         if (services == null)
         {
@@ -386,13 +433,13 @@ public static class GrpcClientServiceExtensions
 
         var builder = new DefaultHttpClientBuilder(services, name);
 
-        builder.Services.AddTransient<TClient>(s =>
+        builder.Services.AddTransient(type, s =>
         {
             var clientFactory = s.GetRequiredService<GrpcClientFactory>();
-            return clientFactory.CreateClient<TClient>(builder.Name);
+            return clientFactory.CreateClient(type, builder.Name);
         });
 
-        ReserveClient(builder, typeof(TClient), name);
+        ReserveClient(builder, type, name);
 
         return builder;
     }
